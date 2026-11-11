@@ -37,24 +37,35 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-function sendConvert(tabId, caseType) {
-  chrome.tabs.sendMessage(tabId, {
-    action: "convertCase",
-    caseType,
-  }).catch(() => {
-    // Content script not available on this page (chrome://, edge://, etc.)
-  });
+// The context-menu click and the keyboard command each grant activeTab for the
+// current tab, so the converter is injected on demand instead of running on every page.
+async function convertInTab(tabId, caseType, frameId) {
+  const target = frameId ? { tabId, frameIds: [frameId] } : { tabId, allFrames: true };
+  try {
+    await chrome.scripting.executeScript({ target, files: ["content.js"] });
+    await chrome.scripting.executeScript({
+      target,
+      func: (type) => globalThis.__tccRun(type),
+      args: [caseType],
+    });
+  } catch (error) {
+    // Restricted pages (chrome://, Web Store, PDF viewer) cannot be scripted.
+    console.debug("Text Case Converter: cannot run on this page.", error);
+  }
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (!caseIds.has(info.menuItemId)) return;
-  sendConvert(tab.id, info.menuItemId);
+  if (!caseIds.has(info.menuItemId) || !tab) return;
+  convertInTab(tab.id, info.menuItemId, info.frameId);
 });
 
-// Keyboard shortcut support
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener((command, tab) => {
   if (!caseIds.has(command)) return;
+  if (tab) return convertInTab(tab.id, command);
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) sendConvert(tabs[0].id, command);
+    if (tabs[0]) convertInTab(tabs[0].id, command);
   });
 });
+
+// Toolbar icon opens the About / shortcuts page.
+chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());

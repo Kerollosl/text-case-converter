@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Text Case Converter</title>
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<main>
+  <h1>Text Case Converter</h1>
+  <p class="lead">Select text on any page, then right-click and choose <strong>Convert Case</strong>, or press a shortcut.</p>
+
+  <h2>Shortcuts</h2>
+  <ul id="shortcuts" class="list"></ul>
+  <p><button id="open-shortcuts" type="button">Change shortcuts</button></p>
+  <p class="hint">Only four cases get shortcuts (Chrome allows four per extension). camelCase, snake_case and kebab-case are in the right-click menu.</p>
+
+  <h2>Privacy</h2>
+  <p>Text Case Converter runs only when you pick a conversion. It touches only your current selection on the current tab, collects nothing, and sends nothing anywhere. <a href="TODO_PRIVACY_URL" id="privacy-link">Privacy policy</a> &middot; <a href="TODO_SUPPORT_URL" id="support-link">Support</a></p>
+  <p class="hint">Version <span id="version"></span></p>
+</main>
+<script src="options.js"></script>
+</body>
+</html>

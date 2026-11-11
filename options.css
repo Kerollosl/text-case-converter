@@ -1,0 +1,15 @@
+:root { color-scheme: light dark; --fg:#1f1f1f; --muted:#555; --bg:#fff; --accent:#2f6fb5; --line:#d6d6d6; }
+@media (prefers-color-scheme: dark) { :root { --fg:#ececec; --muted:#b0b0b0; --bg:#1c1c1c; --accent:#8db8ee; --line:#3a3a3a; } }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:560px; margin:0 auto; padding:32px 20px 48px; }
+h1 { font-size:24px; margin:0 0 8px; }
+h2 { font-size:16px; margin:28px 0 8px; }
+.lead { margin:0; }
+.hint { color:var(--muted); font-size:13px; }
+.list { list-style:none; padding:0; margin:0 0 12px; border-top:1px solid var(--line); }
+.list li { display:flex; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px solid var(--line); }
+kbd { font:13px ui-monospace,Menlo,monospace; border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+button { font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; }
+button:hover { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+a { color:var(--accent); }
+button:focus-visible, a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }

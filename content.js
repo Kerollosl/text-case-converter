@@ -1,34 +1,46 @@
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.action !== "convertCase") return;
-  const caseType = msg.caseType;
+// Injected on demand by background.js (activeTab + scripting). Not a manifest content script.
+(function (root) {
+  "use strict";
 
   // Words that stay lowercase in title case (AP style)
   const TITLE_MINOR = new Set([
     "a", "an", "the", "and", "but", "or", "nor", "for", "yet", "so",
     "at", "by", "in", "of", "on", "to", "up", "as", "is", "if", "it",
-    "vs", "via"
+    "vs", "via",
   ]);
 
+  const CASE_LABELS = {
+    upper: "uppercase",
+    lower: "lowercase",
+    title: "title case",
+    sentence: "sentence case",
+    camel: "camelCase",
+    snake: "snake_case",
+    kebab: "kebab-case",
+  };
+
+  // Upper-case the first code point, lower-case the rest (Unicode aware).
+  const capitalize = (w) => {
+    const first = String.fromCodePoint(w.codePointAt(0));
+    return first.toUpperCase() + w.slice(first.length).toLowerCase();
+  };
+
   const toTitleCase = (s) =>
-    s.replace(/\w\S*/g, (w, offset) => {
+    s.replace(/[\p{L}\p{N}]\S*/gu, (w, offset) => {
       // Always capitalize the first and last word
-      if (offset === 0 || offset + w.length === s.length) {
-        return w[0].toUpperCase() + w.slice(1).toLowerCase();
-      }
-      if (TITLE_MINOR.has(w.toLowerCase())) {
-        return w.toLowerCase();
-      }
-      return w[0].toUpperCase() + w.slice(1).toLowerCase();
+      if (offset === 0 || offset + w.length === s.length) return capitalize(w);
+      if (TITLE_MINOR.has(w.toLowerCase())) return w.toLowerCase();
+      return capitalize(w);
     });
 
   const toSentenceCase = (s) =>
     s
       .toLowerCase()
-      .replace(/(^\s*|[.!?]\s+|\n\s*)(\w)/g, (_, pre, ch) => pre + ch.toUpperCase());
+      .replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (_, pre, ch) => pre + ch.toUpperCase());
 
   const toWords = (s) =>
     s
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
       .replace(/[_\-]+/g, " ")
       .split(/\s+/)
       .filter(Boolean);
@@ -41,7 +53,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     camel: (s) => {
       const w = toWords(s);
       if (!w.length) return s;
-      return w[0].toLowerCase() + w.slice(1).map((x) => x[0].toUpperCase() + x.slice(1).toLowerCase()).join("");
+      return w[0].toLowerCase() + w.slice(1).map(capitalize).join("");
     },
     snake: (s) => {
       const w = toWords(s);
@@ -53,114 +65,119 @@ chrome.runtime.onMessage.addListener((msg) => {
     },
   };
 
-  const el = document.activeElement;
-  const isInput =
-    el &&
-    (el.tagName === "TEXTAREA" ||
-      (el.tagName === "INPUT" && /^(text|search|url|email|tel)$/i.test(el.type)));
+  // ─── Visual feedback toast ────────────────────────────────────────────────
 
-  let converted;
+  function showToast(message) {
+    if (typeof document === "undefined") return;
+    const existing = document.getElementById("__tcc-toast");
+    if (existing) existing.remove();
 
-  if (isInput) {
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = el.value.substring(start, end);
-    if (!selected) return;
-    converted = converters[caseType](selected);
-    if (converted === selected) return showToast("No changes needed");
-    const before = el.value.substring(0, start);
-    const after = el.value.substring(end);
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      Object.getPrototypeOf(el), 'value'
-    ).set;
-    nativeInputValueSetter.call(el, before + converted + after);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    const newPos = start + converted.length;
-    el.setSelectionRange(newPos, newPos);
-  } else {
-    const sel = window.getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return;
-    const selected = sel.toString();
-    if (!selected) return;
-    converted = converters[caseType](selected);
-    if (converted === selected) return showToast("No changes needed");
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const toast = document.createElement("div");
+    toast.id = "__tcc-toast";
+    toast.textContent = message;
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    Object.assign(toast.style, {
+      position: "fixed",
+      bottom: "20px",
+      right: "20px",
+      background: dark ? "#2b2b2b" : "#ffffff",
+      color: dark ? "#f2f2f2" : "#242424",
+      padding: "9px 12px",
+      border: dark ? "1px solid rgba(255, 255, 255, 0.24)" : "1px solid rgba(0, 0, 0, 0.16)",
+      borderRadius: "6px",
+      fontSize: "14px",
+      lineHeight: "1.3",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      fontWeight: "600",
+      zIndex: "2147483647",
+      opacity: "0",
+      transform: "translateY(8px)",
+      transition: reduce ? "none" : "opacity 0.2s ease, transform 0.2s ease",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.14)",
+      pointerEvents: "none",
+    });
+    (document.body || document.documentElement).appendChild(toast);
 
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translateY(0)";
+    });
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(8px)";
+      setTimeout(() => toast.remove(), reduce ? 0 : 200);
+    }, 1500);
+  }
+
+  // ─── Applying the conversion to the page ──────────────────────────────────
+
+  function replaceInRange(sel, converted) {
     const range = sel.getRangeAt(0);
+    const { startContainer: sc, endContainer: ec } = range;
+    if (sc === ec && sc.nodeType === Node.TEXT_NODE) {
+      // Single text node: edit in place so surrounding formatting is untouched.
+      const offset = range.startOffset;
+      sc.replaceData(offset, range.endOffset - offset, converted);
+      sel.collapse(sc, offset + converted.length);
+      return;
+    }
     range.deleteContents();
     const textNode = document.createTextNode(converted);
     range.insertNode(textNode);
-
-    // Place cursor right after the inserted text
-    const newRange = document.createRange();
-    newRange.setStartAfter(textNode);
-    newRange.collapse(true);
+    const after = document.createRange();
+    after.setStartAfter(textNode);
+    after.collapse(true);
     sel.removeAllRanges();
-    sel.addRange(newRange);
-
-    // Trigger input event for frameworks that listen
-    const editable =
-      (el && el.closest && el.closest("[contenteditable]")) ||
-      (el && el.getAttribute && el.getAttribute("contenteditable") ? el : null);
-    if (editable) {
-      editable.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    sel.addRange(after);
   }
 
-  const caseLabels = {
-    upper: "uppercase",
-    lower: "lowercase",
-    title: "title case",
-    sentence: "sentence case",
-    camel: "camelCase",
-    snake: "snake_case",
-    kebab: "kebab-case",
-  };
-  showToast(`Converted to ${caseLabels[caseType]}`);
-});
+  function run(caseType) {
+    const convert = converters[caseType];
+    if (!convert) return { done: false };
 
-// ─── Visual Feedback Toast ──────────────────────────────────────────────────
+    const el = document.activeElement;
+    const isInput =
+      el &&
+      (el.tagName === "TEXTAREA" ||
+        (el.tagName === "INPUT" && /^(text|search|url|email|tel)$/i.test(el.type)));
 
-function showToast(message) {
-  // Remove any existing toast
-  const existing = document.getElementById("__tcc-toast");
-  if (existing) existing.remove();
+    if (isInput) {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const selected = el.value.substring(start, end);
+      if (!selected) return { done: false };
+      const converted = convert(selected);
+      if (converted === selected) { showToast("No changes needed"); return { done: true }; }
+      // insertText keeps the page's undo history and fires native input events.
+      if (!document.execCommand("insertText", false, converted)) {
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value").set;
+        setter.call(el, el.value.substring(0, start) + converted + el.value.substring(end));
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.setSelectionRange(start + converted.length, start + converted.length);
+      }
+    } else {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || sel.isCollapsed) return { done: false };
+      const selected = sel.toString();
+      if (!selected) return { done: false };
+      const converted = convert(selected);
+      if (converted === selected) { showToast("No changes needed"); return { done: true }; }
 
-  const toast = document.createElement("div");
-  toast.id = "__tcc-toast";
-  toast.textContent = message;
-  toast.setAttribute("role", "status");
-  toast.setAttribute("aria-live", "polite");
-  Object.assign(toast.style, {
-    position: "fixed",
-    bottom: "20px",
-    right: "20px",
-    background: "#ffffff",
-    color: "#242424",
-    padding: "9px 12px",
-    border: "1px solid rgba(0, 0, 0, 0.16)",
-    borderRadius: "6px",
-    fontSize: "13px",
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    fontWeight: "600",
-    zIndex: "2147483647",
-    opacity: "0",
-    transform: "translateY(8px)",
-    transition: "opacity 0.2s ease, transform 0.2s ease",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.14)",
-    pointerEvents: "none",
-  });
+      const anchor = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      const editable = anchor && anchor.isContentEditable;
+      // In editable regions insertText keeps the formatting at the selection and the undo stack.
+      if (!(editable && document.execCommand("insertText", false, converted))) {
+        replaceInRange(sel, converted);
+        if (editable) anchor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    showToast(`Converted to ${CASE_LABELS[caseType]}`);
+    return { done: true };
+  }
 
-  document.body.appendChild(toast);
-
-  // Trigger animation
-  requestAnimationFrame(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translateY(0)";
-  });
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translateY(8px)";
-    setTimeout(() => toast.remove(), 200);
-  }, 1500);
-}
+  root.__tccRun = run;
+  if (typeof module !== "undefined") module.exports = { converters, run, capitalize };
+})(globalThis);

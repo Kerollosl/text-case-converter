@@ -6,14 +6,16 @@ MV3 Chrome Extension that converts selected text on any page to various cases (U
 
 | File | Purpose |
 |------|---------|
-| `content.js` | Injected on all pages — intercepts text selection, applies case conversion |
+| `content.js` | Converter; injected on demand by `background.js` via `scripting.executeScript` (activeTab), not a manifest content script |
+| `options.html/.css/.js` | About / shortcuts page |
+| `scripts/package.sh` | Builds the store zip (shipping files only) |
 | `background.js` | Service worker — handles context menu registration |
 | `manifest.json` | MV3 extension manifest |
 | `TextCaseConverter.gs` | Google Apps Script version (standalone, same logic, for Sheets/Docs use) |
 
 ## Architecture
 
-- Right-click context menu on selected text → background service worker receives menu click → sends message to `content.js` with desired case type → `content.js` replaces `window.getSelection()` text
+- Right-click context menu on selected text → background service worker receives menu click or keyboard command (both grant `activeTab`) → injects `content.js` and calls `__tccRun(caseType)` → it replaces `window.getSelection()` text
 - `TextCaseConverter.gs` is a **separate artifact** for Google Sheets/Docs — it is not loaded by the extension. It mirrors the same conversion functions for use via Apps Script.
 
 ## Development
