@@ -42,11 +42,21 @@ chrome.runtime.onInstalled.addListener(() => {
 async function convertInTab(tabId, caseType, frameId) {
   const target = frameId ? { tabId, frameIds: [frameId] } : { tabId, allFrames: true };
   try {
-    await chrome.scripting.executeScript({ target, files: ["content.js"] });
+    // Inject content.js only into frames that do not have it yet (repeat keypresses reuse it).
+    const probe = await chrome.scripting.executeScript({
+      target,
+      func: () => typeof globalThis.__tccRun === "function",
+    });
+    const missing = probe.filter((r) => !r.result).map((r) => r.frameId);
+    if (missing.length) {
+      await chrome.scripting.executeScript({ target: { tabId, frameIds: missing }, files: ["content.js"] });
+    }
+    // Keyboard commands target every frame; only the focused one should convert.
+    const requireFocus = !frameId;
     await chrome.scripting.executeScript({
       target,
-      func: (type) => globalThis.__tccRun(type),
-      args: [caseType],
+      func: (type, focusOnly) => globalThis.__tccRun && globalThis.__tccRun(type, { requireFocus: focusOnly }),
+      args: [caseType, requireFocus],
     });
   } catch (error) {
     // Restricted pages (chrome://, Web Store, PDF viewer) cannot be scripted.

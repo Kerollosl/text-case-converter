@@ -1,6 +1,8 @@
 // Injected on demand by background.js (activeTab + scripting). Not a manifest content script.
 (function (root) {
   "use strict";
+  // Already injected in this frame: keep the existing instance.
+  if (typeof root.__tccRun === "function" && typeof module === "undefined") return;
 
   // Words that stay lowercase in title case (AP style)
   const TITLE_MINOR = new Set([
@@ -134,9 +136,17 @@
     sel.addRange(after);
   }
 
-  function run(caseType) {
+  // True only for the frame that actually holds focus (not a parent whose focused element is an iframe).
+  function frameHasFocus() {
+    if (!document.hasFocus()) return false;
+    const active = document.activeElement;
+    return !(active && (active.tagName === "IFRAME" || active.tagName === "FRAME"));
+  }
+
+  function run(caseType, opts = {}) {
     const convert = converters[caseType];
     if (!convert) return { done: false };
+    if (opts.requireFocus && !frameHasFocus()) return { done: false };
 
     const el = document.activeElement;
     const isInput =
