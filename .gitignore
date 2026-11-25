@@ -5,3 +5,10 @@ build/
 coverage/
 *.log
 dist/
+
+# Agent instruction files (local only)
+CLAUDE.md
+AGENTS.md
+.claude/
+.codex/
+.agents/
